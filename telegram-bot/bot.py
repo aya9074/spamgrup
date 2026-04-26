@@ -2,10 +2,11 @@ import asyncio
 import json
 import random
 import time
+import os
 from datetime import datetime
 from telethon import TelegramClient, errors
-api_id = 31752586
-api_hash = "6464c3b248676c2610172f6ae3b92fca"
+api_id = int(os.getenv("TELEGRAM_API_ID"))
+api_hash = os.getenv("TELEGRAM_API_HASH")
 session_name = "stable_session"
 TS_MARKER_MAIN = "TS_MAIN:"
 TS_MARKER_IMM = "TS_IMM:"
