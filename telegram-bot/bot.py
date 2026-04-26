@@ -102,8 +102,16 @@ async def main_loop():
 # ENTRYPOINT
 # ─────────────────────────────
 
+async def main():
+    print("[BOT] starting...")
+
+    await client.start()
+
+    print("[BOT] authorized")
+
+    await client.run_until_disconnected()
+
+
 if __name__ == "__main__":
-    try:
-        client.loop.run_until_complete(main_loop())
-    except Exception as e:
-        print(f"[FATAL] {e}")
+    import asyncio
+    asyncio.run(main())
