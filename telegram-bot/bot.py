@@ -1,40 +1,109 @@
 import asyncio
 import json
-import random
-import time
 import os
-from datetime import datetime
+import time
 from telethon import TelegramClient, errors
-api_id = int(os.getenv("TELEGRAM_API_ID"))
-api_hash = os.getenv("TELEGRAM_API_HASH")
+
+# ─────────────────────────────
+# ENV CONFIG (SAFE)
+# ─────────────────────────────
+
+def require_env(name: str) -> str:
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"Missing required env variable: {name}")
+    return value
+
+api_id = int(require_env("TELEGRAM_API_ID"))
+api_hash = require_env("TELEGRAM_API_HASH")
+
 session_name = "stable_session"
-TS_MARKER_MAIN = "TS_MAIN:"
-TS_MARKER_IMM = "TS_IMM:"
-def load_json(filename):
-    with open(filename, "r", encoding="utf-8") as f:
-        return json.load(f)
+
+# ─────────────────────────────
+# CLIENT
+# ─────────────────────────────
+
+client = TelegramClient(
+    session_name,
+    api_id,
+    api_hash,
+    auto_reconnect=True,
+    connection_retries=-1,
+    retry_delay=5,
+    flood_sleep_threshold=300,
+)
+
+# ─────────────────────────────
+# LOADERS (SAFE JSON)
+# ─────────────────────────────
+
+def load_json(path: str):
+    if not os.path.exists(path):
+        print(f"[WARN] Missing file: {path}")
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[ERROR] Failed to load {path}: {e}")
+        return []
+
 messages = load_json("messages.json")
 groups = load_json("group.json")
+
 immediate_groups = ["https://t.me/ishugospozhy"]
-delay = 3600
-client = TelegramClient(session_name, api_id, api_hash,
-    auto_reconnect=True, connection_retries=-1,
-    retry_delay=5, flood_sleep_threshold=300)
+
+# ─────────────────────────────
+# STATE STORAGE
+# ─────────────────────────────
+
+TS_MARKER_MAIN = "TS_MAIN:"
+TS_MARKER_IMM = "TS_IMM:"
+
 async def get_last_send(marker):
     try:
         async for msg in client.iter_messages("me", limit=50):
             if msg.text and msg.text.startswith(marker):
                 return float(msg.text[len(marker):])
     except Exception as e:
-        print(f"Ошибка чтения timestamp: {e}")
+        print(f"[WARN] timestamp read error: {e}")
     return None
+
 async def save_last_send(marker):
     try:
         await client.send_message("me", f"{marker}{time.time()}")
     except Exception as e:
-        print(f"Ошибка сохранения timestamp: {e}")
-async def get_elapsed(marker):
-    last = await get_last_send(marker)
-    return float("inf") if last is None else time.time() - last
-# ... остальные функции (send_to_group, delayed_loop, immediate_loop,
-#     heartbeat_loop, connect_with_retry, main)
+        print(f"[WARN] timestamp save error: {e}")
+
+# ─────────────────────────────
+# CORE LOOP (SAFE)
+# ─────────────────────────────
+
+async def main_loop():
+    print("[BOT] started")
+
+    await client.start()
+
+    print("[BOT] authorized")
+
+    while True:
+        try:
+            # здесь твоя логика отправки
+            # пример heartbeat:
+            print("[BOT] alive", time.strftime("%H:%M:%S"))
+
+            await asyncio.sleep(60)
+
+        except Exception as e:
+            print(f"[ERROR] loop crashed: {e}")
+            await asyncio.sleep(5)
+
+# ─────────────────────────────
+# ENTRYPOINT
+# ─────────────────────────────
+
+if __name__ == "__main__":
+    try:
+        client.loop.run_until_complete(main_loop())
+    except Exception as e:
+        print(f"[FATAL] {e}")
