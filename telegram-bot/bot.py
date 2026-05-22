@@ -1,7 +1,9 @@
 import asyncio
 import json
-import os
+import random
 import time
+import os
+from datetime import datetime
 from telethon import TelegramClient, errors
 
 # ─────────────────────────────
@@ -22,7 +24,6 @@ session_name = "stable_session"
 # ─────────────────────────────
 # CLIENT
 # ─────────────────────────────
-
 client = TelegramClient(
     session_name,
     api_id,
@@ -30,88 +31,124 @@ client = TelegramClient(
     auto_reconnect=True,
     connection_retries=-1,
     retry_delay=5,
-    flood_sleep_threshold=300,
+    flood_sleep_threshold=300
 )
 
 # ─────────────────────────────
-# LOADERS (SAFE JSON)
+# LOAD SAFE JSON
 # ─────────────────────────────
 
-def load_json(path: str):
-    if not os.path.exists(path):
-        print(f"[WARN] Missing file: {path}")
-        return []
+def load_json(path):
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            return data if isinstance(data, list) else []
     except Exception as e:
-        print(f"[ERROR] Failed to load {path}: {e}")
+        print(f"[WARN] {path}: {e}")
         return []
 
 messages = load_json("messages.json")
 groups = load_json("group.json")
 
-immediate_groups = ["https://t.me/ishugospozhy"]
+immediate_groups = ["@ishugospozhy"]  # FIX: лучше username, не URL
+
+delay = 3600
 
 # ─────────────────────────────
-# STATE STORAGE
+# LOG
 # ─────────────────────────────
 
-TS_MARKER_MAIN = "TS_MAIN:"
-TS_MARKER_IMM = "TS_IMM:"
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
-async def get_last_send(marker):
+# ─────────────────────────────
+# SEND CORE
+# ─────────────────────────────
+
+async def send_to_group(group, msg):
     try:
-        async for msg in client.iter_messages("me", limit=50):
-            if msg.text and msg.text.startswith(marker):
-                return float(msg.text[len(marker):])
-    except Exception as e:
-        print(f"[WARN] timestamp read error: {e}")
-    return None
+        await client.send_message(group, msg)
+        log(f"[SEND] {group}: {msg[:40]}")
 
-async def save_last_send(marker):
-    try:
-        await client.send_message("me", f"{marker}{time.time()}")
+    except errors.FloodWaitError as e:
+        log(f"[FLOOD] {group}: sleep {e.seconds}s")
+        await asyncio.sleep(e.seconds + 1)
+
+    except errors.SlowModeWaitError as e:
+        log(f"[SLOWMODE] {group}: skip {e.seconds}s")
+
     except Exception as e:
-        print(f"[WARN] timestamp save error: {e}")
+        log(f"[ERROR] {group}: {e}")
+        await asyncio.sleep(5)
 
 # ─────────────────────────────
-# CORE LOOP (SAFE)
+# LOOPS
 # ─────────────────────────────
 
-async def main_loop():
-    print("[BOT] started")
-
-    await client.start()
-
-    print("[BOT] authorized")
-
+async def delayed_loop():
     while True:
-        try:
-            # здесь твоя логика отправки
-            # пример heartbeat:
-            print("[BOT] alive", time.strftime("%H:%M:%S"))
+        if not groups or not messages:
+            log("No groups or messages loaded")
+            await asyncio.sleep(30)
+            continue
 
+        for group in groups:
+            msg = random.choice(messages)
+            await send_to_group(group, msg)
+            await asyncio.sleep(10)
+
+        log("Cycle done (main groups)")
+        await asyncio.sleep(delay)
+
+
+async def immediate_loop():
+    while True:
+        if not immediate_groups or not messages:
             await asyncio.sleep(60)
+            continue
 
-        except Exception as e:
-            print(f"[ERROR] loop crashed: {e}")
-            await asyncio.sleep(5)
+        for group in immediate_groups:
+            msg = random.choice(messages)
+            await send_to_group(group, msg)
+            await asyncio.sleep(10)
+
+        log("Cycle done (immediate)")
+        await asyncio.sleep(delay)
+
+
+async def heartbeat():
+    while True:
+        log("BOT alive")
+        await asyncio.sleep(300)
 
 # ─────────────────────────────
-# ENTRYPOINT
+# MAIN
 # ─────────────────────────────
 
 async def main():
-    print("[BOT] starting...")
+    log("BOT starting")
 
     await client.start()
 
-    print("[BOT] authorized")
+    log("BOT authorized")
 
-    await client.run_until_disconnected()
+    if not await client.is_user_authorized():
+        raise RuntimeError("Not authorized session")
 
+    log(f"Groups: {len(groups)} | Messages: {len(messages)}")
+
+    await asyncio.gather(
+        delayed_loop(),
+        immediate_loop(),
+        heartbeat()
+    )
+
+# ─────────────────────────────
+# ENTRYPOINT (IMPORTANT FOR SYSTEMD)
+# ─────────────────────────────
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        log(f"FATAL: {e}")
