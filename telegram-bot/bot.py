@@ -7,13 +7,13 @@ from datetime import datetime
 from telethon import TelegramClient, errors
 
 # ─────────────────────────────
-# ENV CONFIG (SAFE)
+# ENV SAFE CONFIG
 # ─────────────────────────────
 
 def require_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
-        raise RuntimeError(f"Missing required env variable: {name}")
+        raise RuntimeError(f"Missing env: {name}")
     return value
 
 api_id = int(require_env("TELEGRAM_API_ID"))
@@ -24,6 +24,7 @@ session_name = "stable_session"
 # ─────────────────────────────
 # CLIENT
 # ─────────────────────────────
+
 client = TelegramClient(
     session_name,
     api_id,
